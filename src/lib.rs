@@ -54,8 +54,8 @@ impl Path2Md {
 #[Error]
 pub enum Path2MdWriteFileContentsError {
     FailedToDisplayFilePath(#[from] StripRootError),
-    FailedToWrite(std::io::Error),
-    FailedToGetFileFormat(std::io::Error),
+    FailedToWrite(PathBuf, std::io::Error),
+    FailedToGetFileFormat(PathBuf, std::io::Error),
 }
 
 impl Path2Md {
@@ -67,8 +67,9 @@ impl Path2Md {
         let root_ref = &self.root;
         let path_ref = path.as_ref();
 
-        let fmt = file_format::FileFormat::from_file(path_ref)
-            .map_err(Path2MdWriteFileContentsError::FailedToGetFileFormat)?;
+        let fmt = file_format::FileFormat::from_file(path_ref).map_err(|e| {
+            Path2MdWriteFileContentsError::FailedToGetFileFormat(path_ref.to_path_buf(), e)
+        })?;
         let stripped_file_name = strip_root(root_ref, path_ref)?;
 
         let mut write_file_contents_inner = || -> Result<(), std::io::Error> {
@@ -93,7 +94,8 @@ impl Path2Md {
             Ok(())
         };
 
-        write_file_contents_inner().map_err(Path2MdWriteFileContentsError::FailedToWrite)?;
+        write_file_contents_inner()
+            .map_err(|e| Path2MdWriteFileContentsError::FailedToWrite(path_ref.to_path_buf(), e))?;
 
         Ok(())
     }
