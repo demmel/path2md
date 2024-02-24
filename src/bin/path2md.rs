@@ -16,7 +16,7 @@ fn parse_globs(s: &str) -> Result<glob::Pattern, glob::PatternError> {
     glob::Pattern::new(s)
 }
 
-fn main() -> Result<(), anyhow::Error> {
+fn main() -> Result<(), path2md::Path2MdWriteError<path2md::Path2MdWriteFileContentsError>> {
     let args = Args::parse();
 
     path2md::Path2Md::new(args.path)
