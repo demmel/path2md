@@ -24,29 +24,89 @@ impl Path2Md {
         self.ignore = ignore;
         self
     }
+
+    fn should_walk_path(&self, path: impl AsRef<Path>) -> bool {
+        if let Some(ignore) = &self.ignore {
+            for glob in ignore {
+                if glob.matches_path(path.as_ref().strip_prefix(&self.root).unwrap()) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
 }
 
 #[Error]
-pub enum Path2MdWriteError<E> {
-    FailedToWalkPath(#[from] WalkPathError<E>),
+pub enum Path2MdWriteError {
+    FailedToWriteFileContents(#[from] WalkPathError<Path2MdWriteFileContentsError>),
+    FailedToWriteStructure(#[from] WalkPathError<Path2MdWriteStructureError>),
+    FailedToWrite(#[from] std::io::Error),
 }
 
 impl Path2Md {
-    pub fn write(
-        &self,
-        writer: &mut impl Write,
-    ) -> Result<(), Path2MdWriteError<Path2MdWriteFileContentsError>> {
+    pub fn write(&self, writer: &mut impl Write) -> Result<(), Path2MdWriteError> {
+        if self.root.is_dir() {
+            writeln!(writer, "# Directory Structure")?;
+            writeln!(writer)?;
+            walk_path_contents(
+                &self.root,
+                &|e| (!e.path().is_dir(), e.path()),
+                &|p| self.should_walk_path(p),
+                &mut |p, is_last| self.write_structure_line(p, is_last, writer),
+            )?;
+            writeln!(writer)?;
+            writeln!(writer)?;
+        }
+
         walk_path_contents(
             &self.root,
             &|e| (!e.path().is_file(), e.path()),
             &|p| self.should_walk_path(p),
-            &mut |p| {
+            &mut |p, _| {
                 if p.is_file() {
                     self.write_file_contents(p, writer)?;
                 }
-                Ok(())
+                Ok::<_, Path2MdWriteFileContentsError>(())
             },
         )?;
+        Ok(())
+    }
+}
+
+#[Error]
+pub enum Path2MdWriteStructureError {
+    FailedToWrite(#[from] std::io::Error),
+}
+
+impl Path2Md {
+    fn write_structure_line(
+        &self,
+        path: &Path,
+        is_last: bool,
+        writer: &mut impl Write,
+    ) -> Result<(), Path2MdWriteStructureError> {
+        let path = path.strip_prefix(&self.root).unwrap();
+
+        let suffix = if let Some(c) = path.components().last() {
+            c.as_os_str().to_string_lossy().to_string()
+        } else {
+            ".".to_string()
+        };
+
+        let depth = path.components().count();
+        write!(writer, "    ")?;
+        for _ in 0..(depth.saturating_sub(1)) {
+            write!(writer, "│ ")?;
+        }
+        if depth != 0 {
+            if !is_last {
+                write!(writer, "├─")?;
+            } else {
+                write!(writer, "└─")?;
+            }
+        }
+        writeln!(writer, "{}", suffix)?;
         Ok(())
     }
 }
@@ -64,16 +124,18 @@ impl Path2Md {
         path: impl AsRef<Path>,
         writer: &mut impl Write,
     ) -> Result<(), Path2MdWriteFileContentsError> {
-        let root_ref = &self.root;
         let path_ref = path.as_ref();
 
         let fmt = file_format::FileFormat::from_file(path_ref).map_err(|e| {
             Path2MdWriteFileContentsError::FailedToGetFileFormat(path_ref.to_path_buf(), e)
         })?;
-        let stripped_file_name = strip_root(root_ref, path_ref)?;
+        let mut stripped_path = path_ref.strip_prefix(&self.root).unwrap();
+        if stripped_path.components().count() == 0 {
+            stripped_path = &self.root;
+        }
 
         let mut write_file_contents_inner = || -> Result<(), std::io::Error> {
-            writeln!(writer, "{stripped_file_name}")?;
+            writeln!(writer, "# {}", stripped_path.to_string_lossy())?;
             writeln!(writer,)?;
 
             if let FileFormat::PlainText = fmt {
@@ -99,17 +161,6 @@ impl Path2Md {
 
         Ok(())
     }
-
-    fn should_walk_path(&self, path: impl AsRef<Path>) -> bool {
-        if let Some(ignore) = &self.ignore {
-            for glob in ignore {
-                if glob.matches_path(path.as_ref()) {
-                    return false;
-                }
-            }
-        }
-        true
-    }
 }
 
 #[Error]
@@ -123,7 +174,17 @@ fn walk_path_contents<K: Ord, E>(
     path: impl AsRef<Path>,
     order_by_key: &impl Fn(&DirEntry) -> K,
     should_walk: &impl Fn(&Path) -> bool,
-    for_each: &mut impl FnMut(&Path) -> Result<(), E>,
+    for_each: &mut impl FnMut(&Path, bool) -> Result<(), E>,
+) -> Result<(), WalkPathError<E>> {
+    walk_path_contents_helper(path, order_by_key, should_walk, for_each, true)
+}
+
+fn walk_path_contents_helper<K: Ord, E>(
+    path: impl AsRef<Path>,
+    order_by_key: &impl Fn(&DirEntry) -> K,
+    should_walk: &impl Fn(&Path) -> bool,
+    for_each: &mut impl FnMut(&Path, bool) -> Result<(), E>,
+    is_last: bool,
 ) -> Result<(), WalkPathError<E>> {
     let path = path.as_ref();
 
@@ -131,7 +192,7 @@ fn walk_path_contents<K: Ord, E>(
         return Ok(());
     }
 
-    for_each(path)?;
+    for_each(path, is_last)?;
 
     if path.is_dir() {
         let mut dir = path
@@ -142,8 +203,15 @@ fn walk_path_contents<K: Ord, E>(
 
         dir.sort_by_key(|e| order_by_key(e));
 
-        for entry in dir {
-            walk_path_contents(&entry.path(), order_by_key, should_walk, for_each)?;
+        let len = dir.len();
+        for (i, entry) in dir.into_iter().enumerate() {
+            walk_path_contents_helper(
+                &entry.path(),
+                order_by_key,
+                should_walk,
+                for_each,
+                i == len - 1,
+            )?;
         }
     }
 
@@ -153,19 +221,4 @@ fn walk_path_contents<K: Ord, E>(
 #[Error]
 pub enum StripRootError {
     PrefixDoesntMatch(PathBuf, PathBuf),
-}
-
-fn strip_root(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String, StripRootError> {
-    let root_str = root.as_ref().to_string_lossy();
-    let path_str = path.as_ref().to_string_lossy();
-
-    let stripped =
-        path_str
-            .strip_prefix(root_str.as_ref())
-            .ok_or(StripRootError::PrefixDoesntMatch(
-                root.as_ref().to_path_buf(),
-                path.as_ref().to_path_buf(),
-            ))?;
-
-    Ok(stripped.to_string())
 }
