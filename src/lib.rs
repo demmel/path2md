@@ -1,7 +1,7 @@
 pub use glob::Pattern;
 
 use std::{
-    fs::File,
+    fs::{DirEntry, File},
     io::{BufRead, BufReader, Write},
     os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
@@ -26,69 +26,17 @@ impl Path2Md {
     }
 
     pub fn write(&self, writer: &mut impl Write) -> Result<(), anyhow::Error> {
-        self.write_path_contents(&self.root, writer)
-    }
-
-    pub fn write_path_contents(
-        &self,
-        path: impl AsRef<Path>,
-        writer: &mut impl Write,
-    ) -> Result<(), anyhow::Error> {
-        let path_ref = path.as_ref();
-
-        if let Some(ignore) = &self.ignore {
-            for glob in ignore {
-                if glob.matches_path(path_ref) {
-                    return Ok(());
+        walk_path_contents(
+            &self.root,
+            |e| (!e.path().is_file(), e.path()),
+            |p| self.should_walk_path(p),
+            |p| {
+                if p.is_file() {
+                    self.write_file_contents(p, writer)?;
                 }
-            }
-        }
-
-        let metadata = path_ref.metadata().with_context(|| {
-            format!(
-                "Failed to read metadata for \"{}\"",
-                path.as_ref().to_string_lossy()
-            )
-        })?;
-
-        if metadata.is_dir() {
-            self.write_directory_contents(path_ref, writer)?;
-        } else if metadata.is_file() {
-            self.write_file_contents(path_ref, writer)?;
-        } else if metadata.is_symlink() {
-            anyhow::bail!("Symlinks should be unreachable when using std::fs::metadata()")
-        } else {
-            anyhow::bail!("Unsupported path type")
-        }
-
-        Ok(())
-    }
-
-    pub fn write_directory_contents(
-        &self,
-        path: impl AsRef<Path>,
-        writer: &mut impl Write,
-    ) -> Result<(), anyhow::Error> {
-        let mut dir = path
-            .as_ref()
-            .read_dir()
-            .with_context(|| format!("Failed to read dir \"{}\"", path.as_ref().to_string_lossy()))?
-            .collect::<Result<Vec<_>, _>>()
-            .with_context(|| {
-                format!(
-                    "Failed to read dir entry in \"{}\"",
-                    path.as_ref().to_string_lossy(),
-                )
-            })?;
-
-        dir.sort_by_key(|e| (!e.path().is_file(), e.path()));
-
-        for entry in dir {
-            let entry_path = entry.path();
-            self.write_path_contents(&entry_path, writer)?;
-        }
-
-        Ok(())
+                Ok(())
+            },
+        )
     }
 
     pub fn write_file_contents(
@@ -135,6 +83,50 @@ impl Path2Md {
 
         Ok(())
     }
+
+    fn should_walk_path(&self, path: impl AsRef<Path>) -> bool {
+        if let Some(ignore) = &self.ignore {
+            for glob in ignore {
+                if glob.matches_path(path.as_ref()) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
+fn walk_path_contents<K: Ord>(
+    path: impl AsRef<Path>,
+    order_by_key: impl Fn(&DirEntry) -> K,
+    should_walk: impl Fn(&Path) -> bool,
+    mut for_each: impl FnMut(&Path) -> Result<(), anyhow::Error>,
+) -> Result<(), anyhow::Error> {
+    let path = path.as_ref();
+
+    if !should_walk(path) {
+        return Ok(());
+    }
+
+    for_each(path)?;
+
+    if path.is_dir() {
+        let mut dir = path
+            .read_dir()
+            .with_context(|| format!("Failed to read dir \"{}\"", path.to_string_lossy()))?
+            .collect::<Result<Vec<_>, _>>()
+            .with_context(|| {
+                format!("Failed to read dir entry in \"{}\"", path.to_string_lossy(),)
+            })?;
+
+        dir.sort_by_key(|e| order_by_key(e));
+
+        for entry in dir {
+            walk_path_contents(&entry.path(), &order_by_key, &should_walk, &mut for_each)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn strip_root(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<String, anyhow::Error> {
