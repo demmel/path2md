@@ -8,8 +8,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use file_format::FileFormat;
-
 pub struct Path2Md {
     pub root: PathBuf,
     pub ignore: Option<Vec<Pattern>>,
@@ -138,7 +136,7 @@ impl Path2Md {
             writeln!(writer, "# {}", stripped_path.to_string_lossy())?;
             writeln!(writer,)?;
 
-            if let FileFormat::PlainText = fmt {
+            if fmt.media_type().starts_with("text") {
                 let file = BufReader::new(File::open(path_ref)?);
                 for line in file.lines() {
                     let line = line?;
