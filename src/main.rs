@@ -10,23 +10,47 @@ use clap::Parser;
 use file_format::FileFormat;
 
 /// Dump an the contents of a path to stdout in Markdown format
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 struct Args {
     /// The path to dump
     path: PathBuf,
+    /// File globs to ignore
+    #[clap(short, long, value_delimiter=',', value_parser=parse_globs)]
+    ignore: Option<Vec<glob::Pattern>>,
+}
+
+fn parse_globs(s: &str) -> Result<glob::Pattern, glob::PatternError> {
+    glob::Pattern::new(s)
 }
 
 fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
 
-    print_path(&args.path, &args.path)?;
+    print_path(
+        &args.path,
+        &args.path,
+        args.ignore.as_ref().map(|x| x.as_slice()),
+    )?;
 
     Ok(())
 }
 
-fn print_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
+fn print_path(
+    root: impl AsRef<Path>,
+    path: impl AsRef<Path>,
+    ignore: Option<&[glob::Pattern]>,
+) -> Result<(), anyhow::Error> {
     let root_ref = root.as_ref();
     let path_ref = path.as_ref();
+
+    if let Some(ignore) = ignore {
+        for glob in ignore {
+            if glob.matches_path(path_ref) {
+                return Ok(());
+            }
+        }
+    }
+
     let metadata = path_ref.metadata().with_context(|| {
         format!(
             "Failed to read metadata for \"{}\"",
@@ -35,7 +59,7 @@ fn print_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<(), anyh
     })?;
 
     if metadata.is_dir() {
-        print_directory(root_ref, path_ref)?;
+        print_directory(root_ref, path_ref, ignore)?;
     } else if metadata.is_file() {
         print_file(root_ref, path_ref)?;
     } else if metadata.is_symlink() {
@@ -47,7 +71,11 @@ fn print_path(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<(), anyh
     Ok(())
 }
 
-fn print_directory(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
+fn print_directory(
+    root: impl AsRef<Path>,
+    path: impl AsRef<Path>,
+    ignore: Option<&[glob::Pattern]>,
+) -> Result<(), anyhow::Error> {
     let dir = path
         .as_ref()
         .read_dir()
@@ -63,7 +91,7 @@ fn print_directory(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<(),
 
         let entry_path = entry.path();
 
-        print_path(root.as_ref(), &entry_path)?;
+        print_path(root.as_ref(), &entry_path, ignore)?;
     }
 
     Ok(())

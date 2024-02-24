@@ -9,3 +9,4 @@ edition = "2021"
 anyhow = "1.0.80"
 clap = { version = "4.5.1", features = ["derive"] }
 file-format = { version = "0.24.0", features = ["reader"] }
+glob = "0.3.1"
