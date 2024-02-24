@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use path2md::{Path2Md, Path2MdWriteError, Path2MdWriteFileContentsError};
 
 /// Dump an the contents of a path to stdout in Markdown format
 #[derive(Debug, Parser)]
@@ -16,10 +17,10 @@ fn parse_globs(s: &str) -> Result<glob::Pattern, glob::PatternError> {
     glob::Pattern::new(s)
 }
 
-fn main() -> Result<(), path2md::Path2MdWriteError<path2md::Path2MdWriteFileContentsError>> {
+fn main() -> Result<(), Path2MdWriteError<Path2MdWriteFileContentsError>> {
     let args = Args::parse();
 
-    path2md::Path2Md::new(args.path)
+    Path2Md::new(args.path)
         .ignore(args.ignore)
         .write(&mut std::io::stdout())?;
 

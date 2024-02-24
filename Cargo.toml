@@ -2,11 +2,21 @@
 name = "path2md"
 version = "0.1.0"
 edition = "2021"
+autobins = false
 
+[[bin]]
+name = "path2md"
+path = "src/bin/path2md.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["clap"]
 
 [dependencies]
-clap = { version = "4.5.1", features = ["derive"] }
 file-format = { version = "0.24.0", features = ["reader"] }
 glob = "0.3.1"
 justerror = "1.1.0"
 thiserror = "1.0.57"
+
+clap = { version = "4.5.1", features = ["derive"], optional = true }
