@@ -1,10 +1,16 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    os::windows::fs::MetadataExt,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Context;
 use clap::Parser;
+use file_format::FileFormat;
 
 /// Dump an the contents of a path to stdout in Markdown format
-#[derive(clap::Parser)]
+#[derive(Parser)]
 struct Args {
     /// The path to dump
     path: PathBuf,
@@ -64,7 +70,42 @@ fn print_directory(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<(),
 }
 
 fn print_file(root: impl AsRef<Path>, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
-    println!("{}", strip_root(root.as_ref(), path.as_ref())?);
+    let root_ref = root.as_ref();
+    let path_ref = path.as_ref();
+
+    println!("{}", strip_root(root_ref, path_ref)?);
+    println!();
+
+    let fmt = file_format::FileFormat::from_file(path_ref)?;
+
+    if let FileFormat::PlainText = fmt {
+        let file = BufReader::new(
+            File::open(path_ref)
+                .with_context(|| format!("Fialed to open \"{}\"", path_ref.to_string_lossy()))?,
+        );
+
+        for line in file.lines() {
+            let line = line.with_context(|| {
+                format!(
+                    "Failed to read lien from \"{}\"",
+                    path_ref.to_string_lossy(),
+                )
+            })?;
+            println!("    {}", line.trim_end());
+        }
+    } else {
+        let metadata = path_ref.metadata().with_context(|| {
+            format!(
+                "Fialed to read metadata for \"{}\"",
+                path_ref.to_string_lossy()
+            )
+        })?;
+        println!("    {} ({})", fmt.name(), fmt.media_type());
+        println!("    ... {} bytes ...", metadata.file_size());
+    }
+
+    println!();
+    println!();
 
     Ok(())
 }
