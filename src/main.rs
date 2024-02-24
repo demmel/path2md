@@ -76,21 +76,22 @@ fn print_directory(
     path: impl AsRef<Path>,
     ignore: Option<&[glob::Pattern]>,
 ) -> Result<(), anyhow::Error> {
-    let dir = path
+    let mut dir = path
         .as_ref()
         .read_dir()
-        .with_context(|| format!("Failed to read dir \"{}\"", path.as_ref().to_string_lossy()))?;
-
-    for entry in dir {
-        let entry = entry.with_context(|| {
+        .with_context(|| format!("Failed to read dir \"{}\"", path.as_ref().to_string_lossy()))?
+        .collect::<Result<Vec<_>, _>>()
+        .with_context(|| {
             format!(
                 "Failed to read dir entry in \"{}\"",
                 path.as_ref().to_string_lossy(),
             )
         })?;
 
-        let entry_path = entry.path();
+    dir.sort_by_key(|e| (!e.path().is_file(), e.path()));
 
+    for entry in dir {
+        let entry_path = entry.path();
         print_path(root.as_ref(), &entry_path, ignore)?;
     }
 
