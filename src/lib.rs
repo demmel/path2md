@@ -11,15 +11,25 @@ use std::{
 pub struct Path2Md {
     pub root: PathBuf,
     pub ignore: Option<Vec<Pattern>>,
+    pub structure_only: bool,
 }
 
 impl Path2Md {
     pub fn new(root: PathBuf) -> Self {
-        Self { root, ignore: None }
+        Self {
+            root,
+            structure_only: false,
+            ignore: None,
+        }
     }
 
     pub fn ignore(mut self, ignore: Option<Vec<glob::Pattern>>) -> Self {
         self.ignore = ignore;
+        self
+    }
+
+    pub fn structure_only(mut self, structure_only: bool) -> Self {
+        self.structure_only = structure_only;
         self
     }
 
@@ -57,17 +67,19 @@ impl Path2Md {
             writeln!(writer)?;
         }
 
-        walk_path_contents(
-            &self.root,
-            &|e| (!e.path().is_file(), e.path()),
-            &|p| self.should_walk_path(p),
-            &mut |p, _| {
-                if p.is_file() {
-                    self.write_file_contents(p, writer)?;
-                }
-                Ok::<_, Path2MdWriteFileContentsError>(())
-            },
-        )?;
+        if !self.structure_only {
+            walk_path_contents(
+                &self.root,
+                &|e| (!e.path().is_file(), e.path()),
+                &|p| self.should_walk_path(p),
+                &mut |p, _| {
+                    if p.is_file() {
+                        self.write_file_contents(p, writer)?;
+                    }
+                    Ok::<_, Path2MdWriteFileContentsError>(())
+                },
+            )?;
+        }
         Ok(())
     }
 }

@@ -5,6 +5,8 @@ Dump the contents of a path in Markdown format
 ## Use as a binary
 
 ```
+Dump an the contents of a path to stdout in Markdown format
+
 Usage: path2md.exe [OPTIONS] <PATH>
 
 Arguments:
@@ -12,6 +14,7 @@ Arguments:
 
 Options:
   -i, --ignore <IGNORE>  File globs to ignore
+  -s, --structure-only   Only output the directory structure
   -h, --help             Print help
 ```
 
