@@ -2,6 +2,46 @@
 
 Dump the contents of a path in Markdown format
 
+Have you ever wanted to recursively dump the contents of a directory serially as markdown formatters codeblocks? Now you can!
+
+Let's say you have the following dircetory structure and contents.
+
+```
+# Directory Structure
+
+    .
+    ├─src
+    │ └─main.rs
+    ├─.gitignore
+    └─Cargo.toml
+
+
+# .gitignore
+
+    /target
+
+
+# Cargo.toml
+
+    [package]
+    name = "empty"
+    version = "0.1.0"
+    edition = "2021"
+
+    # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+    [dependencies]
+
+
+# src\main.rs
+
+    fn main() {
+        println!("Hello, world!");
+    }
+```
+
+path2md outputs exactly that.
+
 ## Use as a binary
 
 ```
